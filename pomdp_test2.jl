@@ -130,6 +130,15 @@ function getAcclerationValues(a::Symbol)
     return (acc_lon, acc_lat)
 end
 
+# Generative Interface
+# example:
+# function POMDPs.gen(m::MyPOMDP, s, a, rng)
+#   sp = s+a
+#   r = s^2
+#   o = s+a+randn(rng)
+#   return (sp, r, o)
+# end
+
 function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     # suppose we plan with 0.25s steps
     acc_lon = 0.0
