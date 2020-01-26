@@ -201,7 +201,6 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     # if we are not nn the middle line 
     r -= abs(new_state_ego.d) * 0.2
 
-    # return (sp= #=new state=#, r= #=reward=#, o= #=observation=#)
     return (sp = sp, o = o, r = r)
 end
 
@@ -294,7 +293,7 @@ function loop(pub_action)
     while !is_shutdown()
         println("function loop(pub_action)")
 
-        world_obs = convertMeasurements2ObservationSpace()
+        observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
         if world_obs == 0 
@@ -302,14 +301,14 @@ function loop(pub_action)
         # TODO: initialstate_distribution
         # TODO: initialstate
         # TODO: init Belief
-        # belief = POMDPs.initialize_belief(belief_updater, )
+        # belief_old = POMDPs.initialize_belief(belief_updater, )
         else
             ## TODO: Belief updater
             ## TODO: update belief from Observation
-
-            a = POMDPs.action(planner, belief)
-            belief_old = belief
-            belief = POMDPs.update(belief_updater, belief_old, a, observation)
+            # Something like this?
+            # belief = POMDPs.update(belief_updater, belief_old, a, observation)
+            # a = POMDPs.action(planner, belief)
+            # belief_old = belief
 
             ## TODO: get Action sequence instead of one action
 
@@ -321,13 +320,6 @@ function loop(pub_action)
 
             vel = ego_state_.fVelocity * 1.0
 
-            # 1 2 3
-            # 4 5 6
-            # 7 8 9
-
-            # +1.5|-0.5     1.5|0    1.5|+0.5
-            #    0|-0.5       0|0      0|+0.5
-            # -1.5|-0.5    -1.5|0   -1.5|+0.5
             for i in 1:40
                 println(vel)
                 if vel < 10.0
