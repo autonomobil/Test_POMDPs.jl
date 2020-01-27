@@ -191,7 +191,8 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     r = 0.0
     # TODO: check Collision! --> negative reward if collision or very near object
     # TODO: get current v_ref of lanelet, from route_status_.v_max 
-    v_ref = 50.0 / 3.6
+    # v_ref = 50.0 / 3.6
+    v_ref = route_status_.v_max
 
     # if v is not v_ref
     r -= abs(v_ref - new_state_ego[3])
@@ -229,7 +230,7 @@ my_pomdp = myPOMDP()
 # DESPOT
 # D = tree height/planning horizon
 # T_max = max time for one planning step
-solver =DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = 40) # can work with generative interface
+solver = DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = 40) # can work with generative interface
 
 ## POMCPOW
 # solver = POMCPOWSolver(max_depth = 40, max_time = 1.0) # needs explicit interface
@@ -341,8 +342,6 @@ function loop(pub_action)
     loop_rate = Rate(1.0)
 
     while !is_shutdown()
-        println("function loop(pub_action)")
-
         observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
