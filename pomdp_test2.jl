@@ -278,28 +278,6 @@ belief_updater = updater(planner)
 # rand(rng::AbstractRNG, d::LDNormalStateDist) = LightDark1DState(0, d.mean + randn(rng)*d.std)
 # initialstate_distribution(pomdp::LightDark1D) = LDNormalStateDist(2, 3)
 # observation(p::LightDark1D, sp::LightDark1DState) = Normal(sp.y, p.sigma(sp.y))
-
-function show_tree_and_best_sequence(planner, b)
-    a, info = action_info(planner, b)
-
-    tree = info[:tree]
-    show(stdout, MIME("text/plain"), tree)
-
-    bindex = 1
-    a_sequence = actiontype(my_pomdp)[]
-    while !isempty(tree.tried[bindex])
-        anodes = tree.tried[bindex]
-        bnode = POWTreeObsNode(tree, bindex)
-        best_anode = DESPOTSolver.select_best(MaxQ(), bnode, MersenneTwister(1))
-        push!(a_sequence, tree.a_labels[best_anode])
-        children = [pair[2] for pair in tree.generated[best_anode]]
-        # find most likely observation
-        bindex = children[argmax([tree.total_n[c] for c in children])]
-    end
-    @show a_sequence
-    return a_sequence
-end
-
 ################################################
 
 # global variabels
