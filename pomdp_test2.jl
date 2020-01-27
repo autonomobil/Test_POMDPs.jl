@@ -152,18 +152,19 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     # object states
     new_state_objs = @MMatrix zeros(size(s.objs, 1), 4) # s, d, v, r  | states for 10 nearest objects
     for i in 1:size(s.objs, 1)
-        if (
-            s.objs[i].s != 0.0 &&
-            s.objs[i].d != 0.0 && s.objs[i].v != 0.0 && s.objs[i].r != 0.0
+        if (s.objs[i, 1] != 0.0 &&
+            s.objs[i, 2] != 0.0 && 
+            s.objs[i, 3] != 0.0 && 
+            s.objs[i, 4] != 0.0
         )
             # TODO: get conflict-zone-interaction based acceleration a_k 
             a_k = 0.
-            new_state_objs[i].s = s.objs[i].s + 0.25 * s.objs[i].v + 0.5 * 0.25 * 0.25 * a_k
-            new_state_objs[i].d = s.objs[i].d
-            new_state_objs[i].v = s.objs[i].v + 0.25 * a_k
+            new_state_objs[i, 1] = s.objs[i, 1] + 0.25 * s.objs[i, 3] + 0.5 * 0.25 * 0.25 * a_k
+            new_state_objs[i, 2] = s.objs[i, 2]
+            new_state_objs[i, 3] = s.objs[i, 3] + 0.25 * a_k
 
             # TODO: Somehow calculate route probability via features (position error, v-vref error)
-            new_state_objs[i].route_id = s.objs[i].route_id
+            new_state_objs[i, 4] = s.objs[i, 4]
         end
     end
 
@@ -196,30 +197,20 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     v_ref = 50.0 / 3.6
 
     # if v is not v_ref
-    r -= abs(v_ref - new_state_ego.v)
+    r -= abs(v_ref - new_state_ego[3])
 
     # if we go in direction of destination
-    r += new_state_ego.s - s.ego[1]
+    r += new_state_ego[1] - s.ego[1]
 
     # if we are not nn the middle line 
-    r -= abs(new_state_ego.d) * 0.2
+    r -= abs(new_state_ego[2]) * 0.2
 
     return (sp = sp, o = o, r = r)
 end
 
 function POMDPs.initialstate_distribution(m::myPOMDP)
-    example_ego_state = SVector(280.34234, 1.1, 13.2)
-    example_obj_states = @SMatrix [
-        20.0 -0.5 1.5 1.0
-        15.0 0.5 12.0 2.0
-        11.0 -0.6 11.0 1.0
-        10.0 0.3 10.0 0.5
-        0.0 0.0 0.0 0.0
-        0.0 0.0 0.0 0.0
-        0.0 0.0 0.0 0.0
-        0.0 0.0 0.0 0.0
-        0.0 0.0 0.0 0.0
-    ]
+    example_ego_state = SVector(0.0, 1.0, 0.5)
+    example_obj_states = @MMatrix zeros(10, 4)
     example_state = State(example_ego_state, example_obj_states)
     return Deterministic(example_state)
 end
@@ -253,46 +244,48 @@ belief_updater = updater(planner)
 # N = 1000 # 1000 particles
 # belief_updater = SIRParticleFilter(my_pomdp, N)
 
-const NormalEgoStateDist = SMatrix{3, 2} # s mean, s std, d mean, d std, v mean, v std
-const NormalObjStatesDist = SArray{Tuple{10, 4, 2},Float64} #s mean, s std, d mean, d std, v mean, v std, r mean, r std
+# const NormalEgoStateDist = SMatrix{3, 2} # s mean, s std, d mean, d std, v mean, v std
+# const NormalObjStatesDist = SArray{Tuple{10, 4, 2},Float64} #s mean, s std, d mean, d std, v mean, v std, r mean, r std
 
-struct NormalStateDist
-    ego::NormalEgoStateDist
-    objs::NormalObjStatesDist
-end
+# struct NormalStateDist
+#     ego::NormalEgoStateDist
+#     objs::NormalObjStatesDist
+# end
 
-# example belief:
-ego_b0 = NormalEgoStateDist(SMatrix{3,2}([1. 3. ; 2. 4.; 0.5 0.2]))
-objs_b0 = @MArray zeros(10, 4, 2)
+# # example belief:
+# ego_b0 = NormalEgoStateDist(SMatrix{3,2}([1. 3. ; 2. 4.; 0.5 0.2]))
+# objs_b0 = @MArray zeros(10, 4, 2)
 
-b0 = NormalStateDist(ego_b0, objs_b0)
+# b0 = NormalStateDist(ego_b0, objs_b0)
 
-example_ego_state = SVector(280.34234, 1.1, 13.2)
-example_obj_states = @SMatrix [
-    20.0 -0.5 1.5 1.0
-    15.0 0.5 12.0 2.0
-    11.0 -0.6 11.0 1.0
-    10.0 0.3 10.0 0.5
-    0.0 0.0 0.0 0.0
-    0.0 0.0 0.0 0.0
-    0.0 0.0 0.0 0.0
-    0.0 0.0 0.0 0.0
-    0.0 0.0 0.0 0.0
-]
-rand(rng::AbstractRNG, d::NormalStateDist) = State(example_ego_state, example_obj_states)
+# example_ego_state = SVector(280.34234, 1.1, 13.2)
+# example_obj_states = @SMatrix [
+#     20.0 -0.5 1.5 1.0
+#     15.0 0.5 12.0 2.0
+#     11.0 -0.6 11.0 1.0
+#     10.0 0.3 10.0 0.5
+#     0.0 0.0 0.0 0.0
+#     0.0 0.0 0.0 0.0
+#     0.0 0.0 0.0 0.0
+#     0.0 0.0 0.0 0.0
+#     0.0 0.0 0.0 0.0
+# ]
+# rand(rng::AbstractRNG, d::NormalStateDist) = State(example_ego_state, example_obj_states)
 
 # https://github.com/JuliaPOMDP/POMDPModels.jl/blob/master/src/LightDark.jl
 # sampletype(::Type{LDNormalStateDist}) = LightDark1DState
 # rand(rng::AbstractRNG, d::LDNormalStateDist) = LightDark1DState(0, d.mean + randn(rng)*d.std)
 # initialstate_distribution(pomdp::LightDark1D) = LDNormalStateDist(2, 3)
-
 # observation(p::LightDark1D, sp::LightDark1DState) = Normal(sp.y, p.sigma(sp.y))
 ################################################
 
+# global variabels
 route_status_ = IkaRouteStatus()
 ego_state_ = IkaEgoState()
 object_list_ = IkaObjectList()
 predicted_object_list_ = IkaObjectListPrediction()
+b_got_first_measurement = false
+
 
 function callbackEgoState(msg::IkaEgoState)
     global ego_state_ = msg
@@ -334,6 +327,9 @@ function convertMeasurements2ObservationSpace()
     end
 end
 
+dist = initialstate_distribution(my_pomdp)
+belief = initialize_belief(belief_updater, dist)
+belief_old = belief
 
 function loop(pub_action)
 
@@ -345,23 +341,13 @@ function loop(pub_action)
         observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
-        if observation == 0 
-        # no measurement yet
-        # TODO: initialstate_distribution
-        # TODO: initialstate
-        # TODO: init Belief
-        b0 = initialstate_distribution(myPOMDP)
-        belief = b0
-        belief_old = b0
-        # POMDPs.initialize_belief(belief_updater, )
-        
-        else
+        if observation != 0 
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
             a = POMDPs.action(planner, belief)
-            belief = POMDPs.update(belief_updater, belief_old, a, observation)
-            belief_old = belief
+            global belief = POMDPs.update(belief_updater, belief_old, a, observation)
+            global belief_old = belief
 
             ## TODO: get Action sequence instead of one action
 
