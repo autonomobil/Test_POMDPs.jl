@@ -52,7 +52,7 @@ using LinearAlgebra
 const EgoState = SVector{3,Float64} # s, d, v
 const ObjStates = SMatrix{(10, 4),Float64}  # s, d, v, r  | states for 10 nearest objects
 
-struct State{EgoState, ObjStates}
+struct State{EgoState,ObjStates}
     ego::EgoState
     objs::ObjStates
 end
@@ -62,7 +62,7 @@ end
 const EgoObserv = SVector{3,Float64} # s, d, v
 const ObjObservs = SMatrix{(10, 3),Float64} # x, y, v  | observations for 10 nearest objects
 
-struct Observation{EgoObserv, ObjObservs}
+struct Observation{EgoObserv,ObjObservs}
     ego::EgoObserv
     objs::ObjObservs
 end
@@ -155,10 +155,9 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
         if (s.objs[i, 1] != 0.0 &&
             s.objs[i, 2] != 0.0 && 
             s.objs[i, 3] != 0.0 && 
-            s.objs[i, 4] != 0.0
-        )
+            s.objs[i, 4] != 0.0)
             # TODO: get conflict-zone-interaction based acceleration a_k 
-            a_k = 0.
+            a_k = 0.0
             new_state_objs[i, 1] = s.objs[i, 1] + 0.25 * s.objs[i, 3] + 0.5 * 0.25 * 0.25 * a_k
             new_state_objs[i, 2] = s.objs[i, 2]
             new_state_objs[i, 3] = s.objs[i, 3] + 0.25 * a_k
@@ -215,6 +214,10 @@ function POMDPs.initialstate_distribution(m::myPOMDP)
     return Deterministic(example_state)
 end
 
+function POMDPModelTools.obs_weight(m::myPOMDP, sp::State, o::Observation)
+    return 0.9
+end
+
 
 function POMDPs.isterminal(m::myPOMDP, s::State)
     return false # TODO implement
@@ -223,12 +226,12 @@ end
 POMDPs.discount(pomdp::myPOMDP) = 0.95 # necessary?
 my_pomdp = myPOMDP()
 
-## DESPOT
-# construct and config the pomdp solver
+
+## construct and config the pomdp solver
+# DESPOT
 # D = tree height/planning horizon
 # T_max = max time for one planning step
-solver =
-    DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = 40) # can work with generative interface
+solver =DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = 40) # can work with generative interface
 
 ## POMCPOW
 # solver = POMCPOWSolver(max_depth = 40, max_time = 1.0) # needs explicit interface
@@ -280,11 +283,11 @@ belief_updater = updater(planner)
 ################################################
 
 # global variabels
-route_status_ = IkaRouteStatus()
-ego_state_ = IkaEgoState()
-object_list_ = IkaObjectList()
-predicted_object_list_ = IkaObjectListPrediction()
-b_got_first_measurement = false
+route_status_ = 0
+ego_state_ = 0
+object_list_ = 0
+predicted_object_list_ = 0
+b_observation_received = false
 
 
 function callbackEgoState(msg::IkaEgoState)
@@ -305,25 +308,28 @@ function callbackObjectListPrediction(msg::IkaObjectListPrediction)
 end
 
 function convertMeasurements2ObservationSpace()
+    global b_observation_received = false
     #  object observation
-    obs_objs = @MMatrix zeros(size(object_list_.objects, 1), 3)
-    obj = get(object_list_.objects, 1, 0)
-    if obj != 0
-        # valid objects
-        for i in 1:size(object_list_.objects, 1)
-            obj = get(object_list_.objects, i, 0)
-            obs_objs[i, 1] = obj.fPosX
-            obs_objs[i, 2] = obj.fPosY
-            obs_objs[i, 3] = sqrt(obj.fAbsVelX * obj.fAbsVelX + obj.fAbsVelY * obj.fAbsVelY)
+    if object_list_ != 0
+        obs_objs = @MMatrix zeros(size(object_list_.objects, 1), 3)
+        obj = get(object_list_.objects, 1, 0)
+        if obj != 0
+            # valid objects
+            for i in 1:size(object_list_.objects, 1)
+                obj = get(object_list_.objects, i, 0)
+                obs_objs[i, 1] = obj.fPosX
+                obs_objs[i, 2] = obj.fPosY
+                obs_objs[i, 3] = sqrt(obj.fAbsVelX * obj.fAbsVelX + obj.fAbsVelY * obj.fAbsVelY)
+            end
         end
     end
 
     # ego observation
-    if route_status_.s isa Float64 || route_status_.s isa Float32
+    if route_status_ != 0 && ego_state_ != 0
+        println(string("route_status_.s:", route_status_.s))
         obs_ego = EgoObserv(route_status_.s, route_status_.d, ego_state_.fVelocity)
+        global b_observation_received = true
         return Observation(obs_ego, obs_objs)
-    else
-        return 0
     end
 end
 
@@ -341,13 +347,16 @@ function loop(pub_action)
         observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
-        if observation != 0 
+        println(string("b_observation_received? ", b_observation_received))
+        if b_observation_received
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
             a = POMDPs.action(planner, belief)
             global belief = POMDPs.update(belief_updater, belief_old, a, observation)
             global belief_old = belief
+            println(string("action", a))
+
 
             ## TODO: get Action sequence instead of one action
 
