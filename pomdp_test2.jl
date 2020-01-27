@@ -177,9 +177,7 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     # objects observation
     # TODO: Somehow generate x,y from route id and s and d 
     # -> Probably Lanelet2-functions needed, fromArccordinates(route, ...)
-    # Example https://github.com/JuliaPOMDP/POMDPModels.jl/blob/master/src/LightDark.jl :
-    # observation(p::LightDark1D, sp::LightDark1DState) = Normal(sp.y, p.sigma(sp.y))
-
+    # 0 for now
     obser_objs = @MMatrix zeros(size(sp.objs, 1), 3)
     for i in 1:size(sp.objs, 1)
         # obser_objs[i, 1] = obj.fPosX 
