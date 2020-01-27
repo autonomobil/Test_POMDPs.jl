@@ -29,10 +29,10 @@ import .definitions.msg:
 
 using POMDPs
 using POMDPModelTools
+using ParticleFilters
 using ARDESPOT
 # using POMCPOW
 # using POMDPPolicies
-# using ParticleFilters
 
 using StaticArrays
 using Distributions
@@ -177,6 +177,9 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     # objects observation
     # TODO: Somehow generate x,y from route id and s and d 
     # -> Probably Lanelet2-functions needed, fromArccordinates(route, ...)
+    # Example https://github.com/JuliaPOMDP/POMDPModels.jl/blob/master/src/LightDark.jl :
+    # observation(p::LightDark1D, sp::LightDark1DState) = Normal(sp.y, p.sigma(sp.y))
+
     obser_objs = @MMatrix zeros(size(sp.objs, 1), 3)
     for i in 1:size(sp.objs, 1)
         # obser_objs[i, 1] = obj.fPosX 
@@ -239,15 +242,57 @@ solver =
 ## POMCPOW
 # solver = POMCPOWSolver(max_depth = 40, max_time = 1.0) # needs explicit interface
 
+sampletype(::Type{State}) = State
+
 planner = solve(solver, my_pomdp) # construct the pomdp planner
 
-belief_updater = updater(planner)
 
+##############
+# Belief
+# belief_updater = updater(planner)
+N = 1000 # 1000 particles
+belief_updater = SIRParticleFilter(my_pomdp, N)
+
+const NormalEgoStateDist = SMatrix{3, 2} # s mean, s std, d mean, d std, v mean, v std
+const NormalObjStatesDist = SArray{Tuple{10, 4, 2},Float64} #s mean, s std, d mean, d std, v mean, v std, r mean, r std
+
+struct NormalStateDist
+    ego::NormalEgoStateDist
+    objs::NormalObjStatesDist
+end
+
+# example belief:
+ego_b0 = NormalEgoStateDist(SMatrix{3,2}([1. 3. ; 2. 4.; 0.5 0.2]))
+objs_b0 = @MArray zeros(10, 4, 2)
+
+b0 = NormalStateDist(ego_b0, objs_b0)
+
+example_ego_state = SVector(280.34234, 1.1, 13.2)
+example_obj_states = @SMatrix [
+    20.0 -0.5 1.5 1.0
+    15.0 0.5 12.0 2.0
+    11.0 -0.6 11.0 1.0
+    10.0 0.3 10.0 0.5
+    0.0 0.0 0.0 0.0
+    0.0 0.0 0.0 0.0
+    0.0 0.0 0.0 0.0
+    0.0 0.0 0.0 0.0
+    0.0 0.0 0.0 0.0
+]
+rand(rng::AbstractRNG, d::NormalStateDist) = State(example_ego_state, example_obj_states)
+
+# https://github.com/JuliaPOMDP/POMDPModels.jl/blob/master/src/LightDark.jl
+# sampletype(::Type{LDNormalStateDist}) = LightDark1DState
+# rand(rng::AbstractRNG, d::LDNormalStateDist) = LightDark1DState(0, d.mean + randn(rng)*d.std)
+# initialstate_distribution(pomdp::LightDark1D) = LDNormalStateDist(2, 3)
+
+# observation(p::LightDark1D, sp::LightDark1DState) = Normal(sp.y, p.sigma(sp.y))
 ################################################
 
 route_status_ = IkaRouteStatus()
 ego_state_ = IkaEgoState()
 object_list_ = IkaObjectList()
+predicted_object_list_ = IkaObjectListPrediction()
 
 function callbackEgoState(msg::IkaEgoState)
     global ego_state_ = msg
@@ -260,6 +305,10 @@ end
 
 function callbackRouteStatus(msg::IkaRouteStatus)
     global route_status_ = msg
+end
+
+function callbackObjectListPrediction(msg::IkaObjectListPrediction)
+    global predicted_object_list_ = msg
 end
 
 function convertMeasurements2ObservationSpace()
@@ -296,18 +345,20 @@ function loop(pub_action)
         observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
-        if world_obs == 0 
+        if observation == 0 
         # no measurement yet
         # TODO: initialstate_distribution
         # TODO: initialstate
         # TODO: init Belief
-        # belief_old = POMDPs.initialize_belief(belief_updater, )
+        belief = b0
+        # belief_old = b0
+        # POMDPs.initialize_belief(belief_updater, )
         else
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
+            a = POMDPs.action(planner, belief)
             # belief = POMDPs.update(belief_updater, belief_old, a, observation)
-            # a = POMDPs.action(planner, belief)
             # belief_old = belief
 
             ## TODO: get Action sequence instead of one action
@@ -351,6 +402,12 @@ function main()
     sub_object_list = Subscriber{IkaObjectList}(
         "/fusion/ikaObjectList",
         callbackObjectList,
+        queue_size = 20,
+    )
+
+    sub_predicted_object_list = Subscriber{IkaObjectListPrediction}(
+        "/ikaObjectListPrediction",
+        callbackObjectListPrediction,
         queue_size = 20,
     )
 
