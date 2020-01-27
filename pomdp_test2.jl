@@ -282,35 +282,39 @@ belief_updater = updater(planner)
 ################################################
 
 # global variabels
-route_status_ = 0
-ego_state_ = 0
-object_list_ = 0
-predicted_object_list_ = 0
-b_observation_received = false
+route_status_ = IkaRouteStatus()
+ego_state_ = IkaEgoState()
+object_list_ = IkaObjectList()
+predicted_object_list_ = IkaObjectListPrediction()
+# b_observation_received = false
+b_observation_received = [false, false, false, false]
 
 
 function callbackEgoState(msg::IkaEgoState)
+    global b_observation_received[1] = true
     global ego_state_ = msg
 end
 
-function callbackObjectList(msg::IkaObjectList)
-    global object_list_ = msg
-end
-
-
 function callbackRouteStatus(msg::IkaRouteStatus)
+    global b_observation_received[2] = true
     global route_status_ = msg
 end
 
+function callbackObjectList(msg::IkaObjectList)
+    global b_observation_received[3] = true
+    global object_list_ = msg
+end
+
 function callbackObjectListPrediction(msg::IkaObjectListPrediction)
+    global b_observation_received[4] = true
     global predicted_object_list_ = msg
 end
 
 function convertMeasurements2ObservationSpace()
-    global b_observation_received = false
+    # global b_observation_received = false
     #  object observation
-    if object_list_ != 0
-        obs_objs = @MMatrix zeros(size(object_list_.objects, 1), 3)
+    obs_objs = @MMatrix zeros(size(object_list_.objects, 1), 3)
+    if b_observation_received[3] && b_observation_received[4] 
         obj = get(object_list_.objects, 1, 0)
         if obj != 0
             # valid objects
@@ -321,14 +325,19 @@ function convertMeasurements2ObservationSpace()
                 obs_objs[i, 3] = sqrt(obj.fAbsVelX * obj.fAbsVelX + obj.fAbsVelY * obj.fAbsVelY)
             end
         end
+    else
+        println("No ObjectList and ObjectListPrediction received!")
     end
 
+    println(string("route_status_.s:", route_status_.s))
+    
     # ego observation
-    if route_status_ != 0 && ego_state_ != 0
-        println(string("route_status_.s:", route_status_.s))
+    if b_observation_received[1] && b_observation_received[2] 
         obs_ego = EgoObserv(route_status_.s, route_status_.d, ego_state_.fVelocity)
-        global b_observation_received = true
         return Observation(obs_ego, obs_objs)
+    else
+        println("No EgoState and RouteStatus received!")
+        return 0
     end
 end
 
@@ -346,7 +355,7 @@ function loop(pub_action)
         # How to convert observation to belief? belief_updater?
         # How to get first belief? initialstate_distribution?
         println(string("b_observation_received? ", b_observation_received))
-        if b_observation_received
+        if all(b_observation_received)
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
@@ -395,7 +404,7 @@ function main()
         Publisher{IkaActionSequence}("/ika_decision_making/actions", queue_size = 20)
 
     sub_ego_state =
-        Subscriber{IkaEgoState}("/localization/EgoState", callbackEgoState, queue_size = 20)
+        Subscriber{IkaEgoState}("/localization/ego_state", callbackEgoState, queue_size = 20)
 
     sub_object_list = Subscriber{IkaObjectList}(
         "/fusion/ikaObjectList",
