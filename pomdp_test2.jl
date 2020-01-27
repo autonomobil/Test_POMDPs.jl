@@ -249,9 +249,9 @@ planner = solve(solver, my_pomdp) # construct the pomdp planner
 
 ##############
 # Belief
-# belief_updater = updater(planner)
-N = 1000 # 1000 particles
-belief_updater = SIRParticleFilter(my_pomdp, N)
+belief_updater = updater(planner)
+# N = 1000 # 1000 particles
+# belief_updater = SIRParticleFilter(my_pomdp, N)
 
 const NormalEgoStateDist = SMatrix{3, 2} # s mean, s std, d mean, d std, v mean, v std
 const NormalObjStatesDist = SArray{Tuple{10, 4, 2},Float64} #s mean, s std, d mean, d std, v mean, v std, r mean, r std
@@ -350,16 +350,18 @@ function loop(pub_action)
         # TODO: initialstate_distribution
         # TODO: initialstate
         # TODO: init Belief
+        b0 = initialstate_distribution(myPOMDP)
         belief = b0
-        # belief_old = b0
+        belief_old = b0
         # POMDPs.initialize_belief(belief_updater, )
+        
         else
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
             a = POMDPs.action(planner, belief)
-            # belief = POMDPs.update(belief_updater, belief_old, a, observation)
-            # belief_old = belief
+            belief = POMDPs.update(belief_updater, belief_old, a, observation)
+            belief_old = belief
 
             ## TODO: get Action sequence instead of one action
 
