@@ -22,7 +22,8 @@ include("msg_import.jl")
 # cxx""" #include "/home/cremer/git/automated-driving-platform/ros/src/perception/processing/route_planning/lanelet2/lanelet2_core/include/lanelet2_core/primitives/Lanelet.h" """
 # Does not work because of include eigen, boost, etc. in header of lanelet source files... so calculating frenet-coordinates manually?
 # route is available as vector of 3D-points(geometry_msgs.msg:Point)
-
+time_step_ = 0.25        # seconds - default
+planning_horizon_ = 40   # steps - default
 ##############
 # State space
 const EgoState = SVector{3,Float64} # s, d, v
@@ -68,9 +69,9 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
     ## next State sp
     # ego state
     # TODO: this is not accurate because v_r can point away from route, but for ok now
-    s_r = s.ego[1] + 0.25 * s.ego[3] + 0.5 * 0.25 * 0.25 * acc_lon # distance along route
-    d_r = s.ego[2] + 0.5 * 0.25 * 0.25 * acc_lat                         # distance perpendicular to route
-    v_r = s.ego[3] + 0.25 * sqrt(acc_lon * acc_lon + acc_lat * acc_lat)  # velocity on route
+    s_r = s.ego[1] + time_step_ * s.ego[3] + 0.5 * time_step_ * time_step_ * acc_lon # distance along route
+    d_r = s.ego[2] + 0.5 * time_step_ * time_step_ * acc_lat                         # distance perpendicular to route
+    v_r = s.ego[3] + time_step_ * sqrt(acc_lon * acc_lon + acc_lat * acc_lat)  # velocity on route
 
     new_state_ego = SVector(s_r, d_r, v_r) # s, d, v
 
@@ -83,9 +84,9 @@ function POMDPs.gen(m::myPOMDP, s::State, a::Symbol, rng)
             s.objs[i, 4] != 0.0)
             # TODO: get conflict-zone-interaction based acceleration a_k 
             a_k = 0.0
-            new_state_objs[i, 1] = s.objs[i, 1] + 0.25 * s.objs[i, 3] + 0.5 * 0.25 * 0.25 * a_k
+            new_state_objs[i, 1] = s.objs[i, 1] + time_step_ * s.objs[i, 3] + 0.5 * time_step_ * time_step_ * a_k
             new_state_objs[i, 2] = s.objs[i, 2]
-            new_state_objs[i, 3] = s.objs[i, 3] + 0.25 * a_k
+            new_state_objs[i, 3] = s.objs[i, 3] + time_step_ * a_k
 
             # TODO: Somehow calculate route probability via features (position error, v-vref error)
             new_state_objs[i, 4] = s.objs[i, 4]
@@ -170,10 +171,10 @@ my_pomdp = myPOMDP()
 # DESPOT
 # D = tree height/planning horizon
 # T_max = max time for one planning step
-solver = DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = 40) # can work with generative interface
+solver = DESPOTSolver(bounds = (-20.0, 20.0), T_max = 1.0, default_action = :neutral, D = planning_horizon_) # can work with generative interface
 
 ## POMCPOW
-# solver = POMCPOWSolver(max_depth = 40, max_time = 1.0) # needs explicit interface
+# solver = POMCPOWSolver(max_depth = planning_horizon_, max_time = 1.0) # needs explicit interface - TODO
 
 sampletype(::Type{State}) = State
 
@@ -263,8 +264,6 @@ function convertMeasurements2ObservationSpace()
                 obs_objs[i, 3] = sqrt(obj.fAbsVelX * obj.fAbsVelX + obj.fAbsVelY * obj.fAbsVelY)
             end
         end
-    else
-        # println("No ObjectList and ObjectListPrediction received!")
     end
 
     println(string("route_status_.s:", route_status_.s))
@@ -274,7 +273,6 @@ function convertMeasurements2ObservationSpace()
         obs_ego = EgoObserv(route_status_.s, route_status_.d, ego_state_.fVelocity)
         return Observation(obs_ego, obs_objs)
     else
-        # println("No EgoState and RouteStatus received!")
         return 0
     end
 end
@@ -286,7 +284,7 @@ belief_old = belief
 
 function loop(pub_action)
 
-    loop_rate = Rate(0.25)
+    loop_rate = Rate(0.5) # min 1 Hz
 
     println("\n************ Decision Making ready ! \n")
 
@@ -314,20 +312,20 @@ function loop(pub_action)
             a_seq = IkaActionSequence()
             a_seq.header.stamp = RobotOS.now()
             a_seq.header.frame_id = "map"
-            a_seq.actions = ones(Int, 40) * 5 # neutral
+            a_seq.actions = ones(Int, planning_horizon_) * 5 # neutral
 
             vel = ego_state_.fVelocity * 1.0
 
-            for i in 1:40
+            for i in 1:planning_horizon_
                 # println(vel)
                 if vel < route_status_.v_max / 3.6
                     a_seq.actions[i] = 2
-                    vel = vel + 0.25 * action_matrix[1, 2][1]
+                    vel = vel + time_step_ * action_matrix[1, 2][1]
                 end
 
                 if vel > route_status_.v_max / 3.6 * 1.1
                     a_seq.actions[i] = 8
-                    vel = vel + 0.25 * action_matrix[3, 2][1]
+                    vel = vel + time_step_ * action_matrix[3, 2][1]
                 end
             end
             publish(pub_action, a_seq)
@@ -361,6 +359,9 @@ function main()
         callbackRouteStatus,
         queue_size = 20,
     )
+
+    global time_step_ = get_param("/ika_decision_making/time_step")
+    global planning_horizon_ = get_param("/ika_decision_making/planning_horizon")
 
     loop(pub_action)
 end
