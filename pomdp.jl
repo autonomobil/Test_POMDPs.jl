@@ -145,7 +145,13 @@ function POMDPs.initialstate_distribution(m::myPOMDP)
     return Deterministic(example_state)
 end
 
-function POMDPModelTools.obs_weight(m::myPOMDP, sp::State, o::Observation)
+
+# https://github.com/JuliaPOMDP/POMDPModelTools.jl/blob/master/src/obs_weight.jl
+# function POMDPModelTools.obs_weight(m::myPOMDP, sp::State, o::Observation)
+# function POMDPModelTools.obs_weight(m::myPOMDP, a::Action, sp::State, o::Observation)
+# TODO: implement this! 
+# See Page 6:https://www.researchgate.net/publication/322279328_Automated_Driving_in_Uncertain_Environments_Planning_With_Interaction_and_Uncertain_Maneuver_Prediction
+function POMDPModelTools.obs_weight(m::myPOMDP, s::State, a::Symbol, sp::State, o::Observation)
     return 0.9
 end
 
@@ -219,11 +225,8 @@ route_status_ = IkaRouteStatus()
 ego_state_ = IkaEgoState()
 object_list_ = IkaObjectList()
 predicted_object_list_ = IkaObjectListPrediction()
-# b_obs_received = false
 # b_obs_received = [false, false, false, false]
 b_obs_received = [false, false, false]
-
-
 
 function callbackEgoState(msg::IkaEgoState)
     global b_obs_received[1] = true
@@ -247,7 +250,6 @@ function callbackObjectListPrediction(msg::IkaObjectListPrediction)
 end
 
 function convertMeasurements2ObservationSpace()
-    # global b_obs_received = false
     #  object observation
     obs_objs = @MMatrix zeros(size(object_list_.objects, 1), 3)
     if b_obs_received[3]
@@ -262,7 +264,7 @@ function convertMeasurements2ObservationSpace()
             end
         end
     else
-        println("No ObjectList and ObjectListPrediction received!")
+        # println("No ObjectList and ObjectListPrediction received!")
     end
 
     println(string("route_status_.s:", route_status_.s))
@@ -272,7 +274,7 @@ function convertMeasurements2ObservationSpace()
         obs_ego = EgoObserv(route_status_.s, route_status_.d, ego_state_.fVelocity)
         return Observation(obs_ego, obs_objs)
     else
-        println("No EgoState and RouteStatus received!")
+        # println("No EgoState and RouteStatus received!")
         return 0
     end
 end
@@ -286,24 +288,23 @@ function loop(pub_action)
 
     loop_rate = Rate(0.25)
 
+    println("\n************ Decision Making ready ! \n")
+
     while !is_shutdown()
         observation = convertMeasurements2ObservationSpace()
         # How to convert observation to belief? belief_updater?
-        # How to get first belief? initialstate_distribution?
-        println(string("b_obs_received? ", b_obs_received))
+        println(string("b_obs_received? ego state, route status, object list: ", b_obs_received))
         if all(b_obs_received)
             ## TODO: Belief updater
             ## TODO: update belief from Observation
             # Something like this?
-            println("solver interference")
-
             a = POMDPs.action(planner, belief)
             global belief = POMDPs.update(belief_updater, belief_old, a, observation)
             global belief_old = belief
-            # get action sequence from planner
+            # get action sequence from planner DESPOTSolver?
 
             # a_sequence = show_tree_and_best_sequence(planner, belief)
-            
+
             # global belief = POMDPs.update(belief_updater, belief_old, a_sequence[0], observation)
             println(string("action:", a))
 
@@ -319,12 +320,12 @@ function loop(pub_action)
 
             for i in 1:40
                 # println(vel)
-                if vel < 9.0
+                if vel < route_status_.v_max / 3.6
                     a_seq.actions[i] = 2
                     vel = vel + 0.25 * action_matrix[1, 2][1]
                 end
 
-                if vel > 13.0
+                if vel > route_status_.v_max / 3.6 * 1.1
                     a_seq.actions[i] = 8
                     vel = vel + 0.25 * action_matrix[3, 2][1]
                 end
